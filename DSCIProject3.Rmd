@@ -1,0 +1,710 @@
+---
+title: "Project 3"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(caTools)
+library(ROCR)
+library(e1071)
+library(caret)
+library(corrplot)
+```
+```{r}
+df <- read.csv("~/Desktop/DataScience Project 3/state_PA_actions_taken (1).csv")
+head(df)
+```
+Altogether, we have 99 columns, that's a lot. Let's see if we can reduce the number of variables while doing some predictions.
+
+```{r}
+column_names <- colnames(df)
+```
+
+```{r}
+action_taken_counts <- table(df$action_taken)
+
+total_count <- sum(action_taken_counts)
+
+action_taken_percentages <- (action_taken_counts / total_count) * 100
+
+barplot(action_taken_percentages, 
+        main = "Percentage of Each Action Taken",
+        xlab = "Action Taken",
+        ylab = "Percentage",
+        col = "blue",
+        ylim = c(0, max(action_taken_percentages) + 10))
+
+text(x = barplot(action_taken_percentages), 
+     y = action_taken_percentages + 1, 
+     labels = paste0(round(action_taken_percentages, 2), "%"), 
+     pos = 3)
+```
+The data is not very well distributed. It's not bad though.
+
+```{r}
+action_taken_counts_df <- as.data.frame(action_taken_counts)
+
+colnames(action_taken_counts_df) <- c("Action", "Count")
+
+print(action_taken_counts_df)
+```
+```{r}
+missing_values_per_column <- colSums(is.na(df) | sapply(df, is.null))
+
+sorted_missing_values <- missing_values_per_column[order(-missing_values_per_column)]
+
+print(sorted_missing_values)
+```
+
+Majority of the columns have large propotion of missing values. Lett's drop all the columns where more than 30% of the data has missing values. If we had less columns, we could have made this threshold as 40 or 50 but sinc we have many columns, it doesn't hurt our approach.
+
+```{r}
+threshold <- 0.3 * nrow(df)
+
+df_filtered <- df[, colSums(is.na(df)) <= threshold]
+
+print("Columns kept:")
+print(names(df_filtered))
+print(dim(df_filtered))
+```
+We now have 67 columns, which is still a lot :)
+
+```{r}
+table(df_filtered$activity_year)
+```
+We don't need activity_year.We don't need lei, state_code, country_code,
+
+```{r}
+barplot(table(df_filtered$derived_msa.md))
+```
+We have good variation here, hence we can keep it.
+
+```{r}
+barplot(table(df_filtered$conforming_loan_limit))
+```
+We can keep this as well
+
+```{r}
+barplot(table(df_filtered$derived_loan_product_type))
+```
+we can have this column as well.
+
+```{r}
+table(df_filtered$census_tract)
+```
+We can have remove this column. Too much variation. Creating dummy variables for so many values is not ideal.
+
+```{r}
+barplot(table(df_filtered$derived_msa.md))
+```
+Since we observe good variation here, we can have it.
+
+```{r}
+barplot(table(df_filtered$derived_dwelling_category))
+```
+We can have this column
+
+```{r}
+barplot(table(df_filtered$derived_race))
+```
+Let's have it. Not much variation but we can have it as an experiment.
+
+```{r}
+barplot(table(df_filtered$derived_sex))
+```
+This has a very good variation. We should have this column for sure.
+
+Let's drop the columns we have decided to drop!
+
+```{r}
+columns_to_drop <- c("activity_year", "lei", "state_code", "country_code", "derived_dwelling_category", "census_tract","county_code")
+
+df_filtered <- df_filtered[, !(names(df_filtered) %in% columns_to_drop)]
+
+```
+
+```{r}
+table(df_filtered$business_or_commercial_purpose)
+```
+
+```{r}
+table(df_filtered$open.end_line_of_credit)
+```
+
+```{r}
+table(df_filtered$reverse_mortgage)
+```
+
+We can understand that there could be some correlation here.
+
+```{r}
+corrplot(cor(df_filtered[, c("business_or_commercial_purpose", "open.end_line_of_credit", "reverse_mortgage")]))
+```
+As we suspected. We can remove any two columns from these two.
+
+Let's choose to remove business_or_commercial_purpose and open.end_line_of_credit
+
+```{r}
+columns_to_drop <- c("business_or_commercial_purpose", "open.end_line_of_credit")
+
+df_filtered <- df_filtered[, !(names(df_filtered) %in% columns_to_drop)]
+```
+
+```{r}
+df_filtered$loan_to_value_ratio <- as.numeric(df_filtered$loan_to_value_ratio)
+```
+
+```{r}
+df_filtered$loan_to_value_ratio <- df_filtered$loan_to_value_ratio / 100
+
+```
+
+```{r}
+pie(table(df_filtered$hoepa_status), labels = names(table(df_filtered$hoepa_status)), main = "HOEPA Status Pie Chart")
+```
+```{r}
+head(table(df_filtered$loan_term))
+```
+
+```{r}
+table(df_filtered$negative_amortization)
+table(df_filtered$interest_only_payment)
+table(df_filtered$balloon_payment)
+```
+```{r}
+corrplot(cor(df_filtered[, c("negative_amortization", "interest_only_payment", "balloon_payment", "other_nonamortizing_features")]))
+```
+They are all highly correlated, we can remove any of the three from the above.
+
+```{r}
+columns_to_drop <- c("negative_amortization", "balloon_payment", "other_nonamortizing_features")
+
+df_filtered <- df_filtered[, !(names(df_filtered) %in% columns_to_drop)]
+```
+
+```{r}
+table(df_filtered$construction_method)
+```
+This is heavily imbalanced. We may not need it.But construction_method from the business perspective look important so let's keep it.
+
+```{r}
+corrplot(cor(df_filtered[, c("manufactured_home_secured_property_type", "manufactured_home_land_property_interest")]))
+```
+We can remove any of the column.
+
+```{r}
+columns_to_drop <- c("manufactured_home_secured_property_type")
+
+
+df_filtered <- df_filtered[, !(names(df_filtered) %in% columns_to_drop)]
+
+```
+
+```{r}
+pie(table(df_filtered$total_units), labels = names(table(df_filtered$total_units)), main = "Total Units")
+
+```
+I don't think this is very important.
+
+```{r}
+columns_to_drop <- c("total_units")
+
+
+df_filtered <- df_filtered[, !(names(df_filtered) %in% columns_to_drop)]
+```
+
+```{r}
+corrplot(cor(df_filtered[, c("tract_population", "tract_minority_population_percent", "ffiec_msa_md_median_family_income", "tract_to_msa_income_percentage", "tract_owner_occupied_units", "tract_one_to_four_family_homes", "tract_median_age_of_housing_units")]))
+
+```
+We can git rid of the items where there is high correlation. Columns like "tract_owner_occupied_units", "tract_one_to_four_family_homes"
+
+```{r}
+columns_to_drop <- c("tract_owner_occupied_units", "tract_one_to_four_family_homes")
+
+
+df_filtered <- df_filtered[, !(names(df_filtered) %in% columns_to_drop)]
+```
+
+Numerical columns: loan_amount, loan_to_value_ratio, interest_rate, rate_spread, loan_term, property_value, income, debt_to_income_ratio, applicant_age, tract_population, tract_minority_population_percent, ffiec_msa_md_median_family_income, tract_to_msa_income_percentage
+
+```{r}
+column_names <- c("loan_amount", "loan_to_value_ratio", "interest_rate", 
+                  "rate_spread", "loan_term", "property_value", "income",
+                  "debt_to_income_ratio", "applicant_age", "tract_population", "tract_minority_population_percent", "ffiec_msa_md_median_family_income", "tract_to_msa_income_percentage")
+
+column_data_types <- sapply(df_filtered[, column_names, drop = FALSE], class)
+
+print("Data Types of Specified Columns:")
+cat(paste(names(column_data_types), ": ", column_data_types, "\n", sep = ""))
+```
+```{r}
+corrplot(cor(df_filtered[, c("loan_amount","loan_to_value_ratio", "income", "tract_population", "tract_minority_population_percent", "ffiec_msa_md_median_family_income", "tract_to_msa_income_percentage")]))
+
+```
+
+```{r}
+sum(is.na(df_filtered$interest_rate))
+```
+
+```{r}
+dim(df_filtered)
+```
+
+```{r}
+df_filtered$interest_rate[is.na(df_filtered$interest_rate)] <- 0
+```
+
+```{r}
+df_filtered$interest_rate <- as.numeric(df_filtered$interest_rate)
+df_filtered$interest_rate <- df_filtered$interest_rate / 100
+```
+
+```{r}
+df_filtered$rate_spread <- as.numeric(df_filtered$rate_spread)
+```
+
+```{r}
+sum(is.na(df_filtered$rate_spread))
+
+```
+
+```{r}
+cleaned_rate_spread <- na.omit(df_filtered$rate_spread)
+
+# Calculate mean and median excluding NA
+mean_rate_spread <- mean(cleaned_rate_spread, na.rm = TRUE)
+median_rate_spread <- median(cleaned_rate_spread, na.rm = TRUE)
+
+# Print the results
+print("Mean rate_spread (excluding NA):")
+print(mean_rate_spread)
+
+print("Median rate_spread (excluding NA):")
+print(median_rate_spread)
+```
+Let's impute the rate_spread by it's median. Not by mean because it could be impacted by the outliers.
+
+```{r}
+df_filtered$rate_spread[is.na(df_filtered$rate_spread)] <- median(cleaned_rate_spread)
+```
+
+```{r}
+#numeric_columns = c("loan_term", "property_value", "income", "applicant_age",
+                  #  "tract_population", "ffiec_msa_md_median_family_income",
+                  #  "interest_rate", "rate_spread", "loan_amount", #"tract_owner_occupied_units", "tract_one_to_four_family_homes", #"tract_median_age_of_housing_units")
+
+
+#is_numeric <- function(x) {
+ # return(is.numeric(x) || is.integer(x))
+#}
+
+#for (col in numeric_columns) {
+ # if (!is.numeric(df_filtered[[col]])) {
+  #  df_filtered[[col]] <- as.numeric(df_filtered[[col]])
+ # }
+
+ # median_value <- median(df_filtered[[col]], na.rm = TRUE)
+  #df_filtered[[col]] <- ifelse(is.na(df_filtered[[col]]), median_value, #df_filtered[[col]])
+
+ # min_val <- min(df_filtered[[col]], na.rm = TRUE)
+ # max_val <- max(df_filtered[[col]], na.rm = TRUE)
+ # df_filtered[[col]] <- (df_filtered[[col]] - min_val) / (max_val - min_val)
+#}
+```
+
+```{r}
+df_filtered[["loan_to_value_ratio"]] <- as.numeric(df_filtered[["loan_to_value_ratio"]])
+
+df_filtered[["debt_to_income_ratio"]] <- as.numeric(df_filtered[["debt_to_income_ratio"]])
+```
+
+```{r}
+sum(is.na(df_filtered$debt_to_income_ratio))
+```
+We can remove debt_to_income_ratio, almost 65% of the data is missing. We can also remove applicant_age as we have close to 90% of the values missing.
+
+```{r}
+columns_to_drop <- c("debt_to_income_ratio", "applicant_age")
+
+df_filtered <- df_filtered[, !(names(df_filtered) %in% columns_to_drop)]
+```
+
+```{r}
+count_missing <- function(x) {
+  sum(is.na(x))
+}
+
+# Get the data types and missing values count for each column
+column_info <- sapply(df_filtered, function(col) {
+  data_type <- class(col)
+  missing_count <- count_missing(col)
+  return(paste("Data Type:", data_type, ", Missing Values:", missing_count))
+})
+
+# Print the information for each column
+print("Information for each Column:")
+cat(paste(names(column_info), ": ", column_info, "\n", sep = ""))
+
+```
+```{r}
+df_filtered$tract_minority_population_percent<- df_filtered$tract_minority_population_percent / 100
+
+```
+
+```{r}
+table(df_filtered$conforming_loan_limit)
+```
+
+```{r}
+calculate_mode <- function(x) {
+  uniq_x <- unique(x)
+  uniq_x[which.max(tabulate(match(x, uniq_x)))]
+}
+
+impute_with_mode <- function(x) {
+  mode_val <- calculate_mode(x)
+  x[is.na(x)] <- mode_val
+  return(x)
+}
+
+df_filtered$county_code <- as.character(df_filtered$county_code)
+
+df_filtered$county_code <- impute_with_mode(df_filtered$county_code)
+
+```
+```{r}
+df_filtered$conforming_loan_limit <- impute_with_mode(df_filtered$conforming_loan_limit)
+```
+
+```{r}
+median_value <- median(df_filtered[["loan_to_value_ratio"]], na.rm = TRUE)
+df_filtered[["loan_to_value_ratio"]] <- ifelse(is.na(df_filtered[["loan_to_value_ratio"]]), median_value, df_filtered[["loan_to_value_ratio"]])
+```
+
+```{r}
+df_filtered$applicant_ethnicity.1 <- impute_with_mode(df_filtered$applicant_ethnicity.1)
+
+```
+
+```{r}
+for (i in 1:nrow(df_filtered)) {
+  if (is.na(df_filtered$co.applicant_ethnicity.1[i])) {
+    df_filtered$co.applicant_ethnicity.1[i] <- df_filtered$applicant_ethnicity.1[i]
+  }
+}
+```
+Most probably, the co applicant's ethnicity will be same as that of ethnicity. Hence, we can replace with it's respective values.
+
+
+```{r}
+df_filtered$applicant_age_above_62 <- impute_with_mode(df_filtered$applicant_age_above_62)
+
+
+```
+
+```{r}
+df_filtered$loan_to_value_ratio <- df_filtered$loan_to_value_ratio / 100
+df_filtered$tract_to_msa_income_percentage <- df_filtered$tract_to_msa_income_percentage / 100
+
+```
+
+```{r}
+table(df_filtered$co.applicant_age)
+```
+
+It does not make sense to have 88888 and 9999, but it could be 80-89 and 90-99 but we cannot possibly have more than 50% of the data with people above age 90. Hence, this could be junk data and we can remove it.
+
+```{r}
+df_filtered <- select(df_filtered, -co.applicant_age)
+```
+
+```{r}
+head(df_filtered)
+```
+```{r}
+print_data_types <- function(dataframe) {
+  cat("Data Types and First 10 Values of Columns:\n")
+  for (col_name in names(dataframe)) {
+    cat(col_name, ": ", class(dataframe[[col_name]]), "\n")
+    cat("  First 10 values: ", head(dataframe[[col_name]], 10), "\n")
+  }
+}
+
+
+print_data_types(df_filtered)
+```
+
+```{r}
+X <- df_filtered[, !names(df_filtered) %in% "action_taken", drop = FALSE]  # All columns except "action_taken"
+y <- df_filtered$action_taken
+```
+
+```{r}
+class(y)
+```
+
+```{r}
+y <- ifelse(y == 1, 1, 0)
+
+y <- factor(y, levels = c(0, 1))
+```
+
+```{r}
+# Need to handle action type. Split the data. 
+# Need to convert int to char:
+# "derived_msa.md" "purchaser_type", "preapproval", "loan_type", "loan_purpose", "lien_status", "reverse_mortgage",
+# "hoepa_status", "interest_only_payment", "construction_method", "occupancy_type", "manufactured_home_land_property_interest",
+# "applicant_credit_score_type", "applicant_credit_score_type", "applicant_ethnicity.1", "applicant_ethnicity.1", "applicant_ethnicity_observed",
+# "co.applicant_ethnicity_observed", "applicant_race.1", "co.applicant_race.1", "applicant_race_observed", "co.applicant_race_observed",
+# "co.applicant_race_observed", "applicant_sex", "applicant_sex_observed", "applicant_sex_observed", "applicant_age_above_62",
+# "submission_of_application", "initially_payable_to_institution", "aus.1", "denial_reason.1"
+```
+
+```{r}
+
+"derived_msa.md" "purchaser_type", "preapproval", "loan_type", "loan_purpose", "lien_status", "reverse_mortgage", "hoepa_status", "interest_only_payment", "construction_method", "occupancy_type", "manufactured_home_land_property_interest", "applicant_credit_score_type", "applicant_credit_score_type", "applicant_ethnicity.1", "applicant_ethnicity.1", "applicant_ethnicity_observed", "co.applicant_ethnicity_observed", "applicant_race.1", "co.applicant_race.1", "applicant_race_observed", "co.applicant_race_observed",
+ "co.applicant_race_observed", "applicant_sex", "applicant_sex_observed", "applicant_sex_observed", "applicant_age_above_62",
+ "submission_of_application", "initially_payable_to_institution", "aus.1", "denial_reason.1"
+```
+
+
+```{r}
+convertNumericToChar <- function(data, numeric_columns) {
+  for (col in numeric_columns) {
+    data[[col]] <- as.character(data[[col]])
+  }
+  return(data)
+}
+
+
+
+numeric_columns_to_convert <- c("derived_msa.md", "purchaser_type", "preapproval", "loan_type", "loan_purpose", "lien_status", "reverse_mortgage", "hoepa_status", "interest_only_payment", "construction_method", "occupancy_type", "manufactured_home_land_property_interest", "applicant_credit_score_type", "applicant_credit_score_type", "applicant_ethnicity.1", "applicant_ethnicity.1", "applicant_ethnicity_observed", "co.applicant_ethnicity_observed", "applicant_race.1", "co.applicant_race.1", "applicant_race_observed", "co.applicant_race_observed",
+ "co.applicant_race_observed", "applicant_sex", "applicant_sex_observed", "applicant_sex_observed", "applicant_age_above_62",
+ "submission_of_application", "initially_payable_to_institution", "aus.1", "denial_reason.1")
+
+X <- convertNumericToChar(X, numeric_columns_to_convert)
+```
+
+```{r}
+char_cols <- sapply(X, is.character)
+
+dummy_cols <- dummyVars("~ .", data = X[char_cols])
+dummy_data <- as.data.frame(predict(dummy_cols, newdata = X))
+
+df_with_dummies <- cbind(X, dummy_data)
+
+df_with_dummies <- df_with_dummies[, !char_cols, drop = FALSE]
+```
+
+```{r}
+head(df_with_dummies)
+```
+```{r Splitting}
+set.seed(100)
+
+split_ratio <- 0.8
+
+split_logical <- sample.split(y, SplitRatio = split_ratio)
+
+X_train <- df_with_dummies[split_logical, ]
+X_test <- df_with_dummies[!split_logical, ]
+y_train <- y[split_logical]
+y_test <- y[!split_logical]
+```
+
+# My Implementation Begins Here
+In the code in the Splittng chunk above, the analytical decision to use `set.seed(100)` embodies the value of reproducibility. This value makes random processes, like data splitting, consistent across code runs. This is crucial for maintaining analysis consistency and transparency. Data splitting, a core machine learning practice, focuses on creating training and testing sets for robust model evaluation. It highlights the importance of assessing a model's performance on an independent test set to prevent overfitting and ensure generalization. Efficient data splitting using `sample.split` and logical indexing optimizes resource utilization, particularly for larger datasets or resource-intensive tasks.
+
+
+However, this approach used by this student’s notebook focuses on random data splitting to create training and testing sets. While this approach is commonly used and effective for assessing model performance, it does not explicitly address data privacy or security concerns.
+
+
+An alternative way to address data privacy concerns when splitting data into training and testing sets is to implement techniques such as data anonymization, pseudonymization, or differential privacy. These methods focus on protecting sensitive information while still allowing for meaningful analysis and model evaluation. For instance, Data Anonymization removes or encrypts sensitive information, ensuring training and testing datasets have only non-sensitive, anonymized data. Pseudonymization replaces sensitive data with irreversible codes, allowing analysis while protecting identities. In data splitting, pseudonyms for sensitive attributes are used. Differential Privacy adds noise to responses, safeguarding individual privacy during data splitting. These methods enhance data privacy in machine learning, addressing challenges with sensitive data while enabling meaningful analysis.
+
+I will be implementing Data Perturbation (Differential Privacy) using a simplified approach. It focuses on adding noise to the data to protect individual privacy while maintaining data utility. I have implemented an alternative approach here to introduce some data privacy. 
+```{r}
+# Sample code parameters
+set.seed(100)
+split_ratio <- 0.8
+
+# Load your dataset (df) here
+# Ensure that you have loaded your dataset correctly.
+
+# Function to add Laplace noise
+addLaplaceNoise <- function(x, sensitivity, epsilon) {
+  scale <- sensitivity / epsilon
+  laplace_noise <- rexp(length(x), rate = 1/scale)
+  noise_signs <- sample(c(-1, 1), length(x), replace = TRUE)
+  perturbed_values <- x + noise_signs * laplace_noise
+  return(perturbed_values)
+}
+
+# Set your privacy parameters
+epsilon <- 1  # Privacy parameter
+sensitivity <- 1  # Sensitivity of the attribute (adjust as needed)
+
+# Replace 'attribute' with the name of your sensitive attribute
+df$perturbed_attribute <- addLaplaceNoise(df$applicant_credit_score_type, sensitivity, epsilon)
+
+# Continue with your analysis using the perturbed attribute
+
+# Split the perturbed dataset
+split_logical <- sample.split(y, SplitRatio = split_ratio)
+X_train_perturbed <- df[split_logical, ]
+X_test_perturbed <- df[!split_logical, ]
+y_train <- y[split_logical]
+y_test <- y[!split_logical]
+
+```
+
+
+
+```{r}
+class(y_train)
+```
+
+```{r}
+class(y_test)
+```
+
+
+#This is my bit too
+ I added this bit to ensure the dimensions of the data match.
+
+```{r}
+# Check the dimensions of your data
+nrow_X_train <- nrow(X_train)
+nrow_y_train <- length(y_train)
+
+# If they have different dimensions, subset the data to match the smaller dimension
+if (nrow_X_train > nrow_y_train) {
+  # Subset X_train to match the length of y_train
+  X_train <- X_train[1:nrow_y_train, ]
+} else if (nrow_X_train < nrow_y_train) {
+  # Subset y_train to match the number of rows in X_train
+  y_train <- y_train[1:nrow_X_train]
+}
+
+# Now, the dimensions of X_train and y_train should match
+# I can proceed with running the logistic regression modeling to see how adding the pertube impacts the evaluation metrics 
+
+```
+
+```{r}
+log_reg_model <- glm(y_train ~ ., data = X_train, family = binomial)
+
+summary(log_reg_model)
+```
+```{r}
+y_test_pred_probs <- predict(log_reg_model, newdata = X_test, type = "response")
+
+y_pred <- ifelse(y_test_pred_probs >= 0.5, 1, 0)
+```
+
+
+```{r}
+calculate_metrics <- function(actual, predicted) {
+  confusion_mat <- confusionMatrix(predicted, actual)
+
+  accuracy_val <- confusion_mat$overall[1]
+  precision_val <- confusion_mat$byClass["Sensitivity"]
+  recall_val <- confusion_mat$byClass["Recall"]
+  f1_val <- confusion_mat$byClass["F1"]
+
+  metrics <- c(accuracy = accuracy_val, precision = precision_val, recall = recall_val, f1 = f1_val)
+  return(metrics)
+}
+
+
+y_pred <- factor(y_pred, levels = c("0", "1"))
+test_metrics <- calculate_metrics(y_test, y_pred)
+```
+
+```{r}
+print(test_metrics)
+```
+The evaluation metrices suffer an decline when the noise is incoporated. As seen the accuracy of classifier reduces to 76.83% a far cry from the  accuracy of 99.89% achieved by the students strategy. Other metrics are also impacted by the alternative approach. A detailed explanation of the reson for the decline is provided further below this notebook. 
+
+```{r}
+install.packages("naivebayes")
+library("naivebayes")
+```
+```{r}
+nb_model <- naive_bayes(y_train ~ ., data = X_train)
+```
+
+```{r}
+print(nb_model)
+```
+```{r}
+y_pred_nb <- predict(nb_model, newdata = X_test)
+```
+
+```{r}
+levels(y_pred_nb)
+```
+
+```{r}
+test_metrics_nb <- calculate_metrics(y_test, y_pred_nb)
+```
+
+```{r}
+print(test_metrics_nb)
+```
+
+We also see a major decrease in Evaluation performance metrics of the naivebayes classifier model. 
+
+```{r}
+install.packages("rpart")
+```
+
+
+```{r}
+library(rpart)
+```
+
+```{r}
+tree_model <- rpart(y_train ~ ., data = X_train, method = "class")
+```
+
+```{r}
+print(tree_model)
+
+```
+
+```{r}
+plot(tree_model)
+text(tree_model, use.n = TRUE)
+```
+We can find out from the above that the interest_rate is the key column in dividing the data.
+
+```{r}
+y_pred_tree <- predict(tree_model, newdata = X_test, type = "class")
+```
+
+```{r}
+test_metrics_dtrees <- calculate_metrics(y_test, y_pred_tree)
+```
+
+```{r}
+print(test_metrics_dtrees)
+```
+There is also a decrease in the performance of this model across all metrics due to the perturbation when compared to the student's notebook. 
+
+
+# My Findings:
+A significant reduction in evaluation metrics values after perturbing sensitive attributes is observed across all models and evaluation metrics in comaprison to the performance of the student's notebook. This significant reduction in the model's performance can be explained by the introduction of noise or distortion in the data due to the perturbation process. This noise can lead to a decrease in the performance of the predictive model. 
+
+This decline in evaluation metrics values post-perturbation signifies the compromise between data privacy and model performance. The introduction of noise, particularly Laplace noise, disrupts the reliability of the data, challenging the model's ability to discern meaningful patterns and relationships. The resultant reduction in accuracy, precision, and sensitivity underscores the intricate balance required in privacy-preserving data analysis. It's crucial to acknowledge the influence of privacy parameters, such as the magnitude of added noise controlled by `epsilon` and attribute sensitivity, on the trade-off between privacy and utility. This impact extends to decision boundaries, where increased ambiguity can hinder the model's classification accuracy. Finding the right equilibrium involves a nuanced understanding of the specific use case, privacy requirements, and potential model reevaluation and retraining post-perturbation. This trade-off underscores the complex interplay between safeguarding sensitive information and maintaining the utility of the data in the realm of privacy-conscious data analysis.
+
+Whether the reduction in model performance due to perturbing sensitive attributes is considered a good or bad thing depends on the specific context, goals, and priorities of your data analysis or machine learning project. Perturbing sensitive attributes in data analysis presents a dual-edged scenario. On one hand, it can be considered beneficial when prioritizing privacy protection, ensuring compliance with regulations like GDPR, and mitigating the risk of unintended privacy breaches. This is particularly crucial in contexts where safeguarding sensitive information is a legal and ethical imperative. On the other hand, a reduction in model performance resulting from perturbation may be viewed negatively when the primary goal is to build accurate predictive models or derive valuable insights. The trade-off between privacy and utility necessitates a careful consideration of project goals, ethical implications, regulatory requirements, and the specific context of use.
+
+
