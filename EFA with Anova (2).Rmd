@@ -1,0 +1,240 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r}
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(ggplot2)
+library(car)
+library(effsize)
+
+setwd("~/Desktop/Manipulation Check")
+
+# Setting the correct file path
+file_path <- "Preliminary analysis.xlsx"
+df <- read_excel(file_path)
+
+# Combining all survey items into one dataframe for factor analysis
+survey_items <- df %>%
+  select(starts_with("F-"), starts_with("S-"))
+
+# Printing the column names to verify
+print(colnames(survey_items))
+
+# Checking column names to verify the correct name
+print(colnames(df))
+
+```
+
+
+```{r}
+
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(ggplot2)
+library(car)
+library(effsize)
+
+# Combining all survey items into one dataframe for factor analysis
+survey_items <- df %>%
+  select(starts_with("F-"), starts_with("S-"))
+
+# Printing the column names to verify
+print(colnames(survey_items))
+
+# Checking column names to verify the correct name
+print(colnames(df))
+
+# Renaming the column if necessary (for example, if it has spaces or special characters)
+# Ensure 'Pair Seen' is the correct column name
+# If the column name contains spaces, surround it with backticks
+df <- df %>% rename(`Pair Seen` = `Pair Seen`)
+
+# Converting 'Pair Seen' column to factor if it exists
+if ("Pair Seen" %in% colnames(df)) {
+  df <- df %>%
+    mutate(`Pair Seen` = as.factor(`Pair Seen`))
+} else {
+  stop("'Pair Seen' column not found in the dataframe")
+}
+
+# Combining survey items with 'Pair Seen' for analysis
+survey_items_with_pair <- df %>%
+  select(starts_with("F-"), starts_with("S-"), `Pair Seen`)
+
+# Print the column names to verify
+print(colnames(survey_items_with_pair))
+
+# Checking for suitability of factor analysis
+# Kaiser-Meyer-Olkin (KMO) measure of sampling adequacy
+kmo_result <- KMO(cor(survey_items))
+print(kmo_result)
+
+# Bartlett's test of sphericity
+bartlett_result <- cortest.bartlett(cor(survey_items), n = nrow(survey_items))
+print(bartlett_result)
+
+# Conducting Factor Analysis
+# Decide on the number of factors using parallel analysis
+fa_parallel <- fa.parallel(survey_items, fm = "ml", fa = "fa")
+print(fa_parallel)
+
+# Conducting factor analysis with the suggested number of factors
+num_factors <- fa_parallel$nfact
+fa_result <- fa(survey_items, nfactors = num_factors, fm = "ml", rotate = "varimax")
+
+# Printing the factor analysis results
+print(fa_result)
+
+# Inspecting factor loadings
+loadings <- fa_result$loadings
+print(loadings)
+
+# Visualizing the factor loadings
+fa.diagram(fa_result)
+
+
+```
+
+```{r}
+
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(ggplot2)
+library(car)
+library(effsize)
+
+# Combining all survey items into one dataframe for factor analysis
+survey_items <- df %>%
+  select(starts_with("F-"), starts_with("S-"))
+
+# Printing the column names to verify
+print(colnames(survey_items))
+
+# Checking column names to verify the correct name
+print(colnames(df))
+
+# Renaming the column if necessary (for example, if it has spaces or special characters)
+# Ensure 'Pair Seen' is the correct column name
+# If the column name contains spaces, surround it with backticks
+df <- df %>% rename(`Pair Seen` = `Pair Seen`)
+
+# Converting 'Pair Seen' column to factor if it exists
+if ("Pair Seen" %in% colnames(df)) {
+  df <- df %>%
+    mutate(`Pair Seen` = as.factor(`Pair Seen`))
+} else {
+  stop("'Pair Seen' column not found in the dataframe")
+}
+
+# Combining survey items with 'Pair Seen' for analysis
+survey_items_with_pair <- df %>%
+  select(starts_with("F-"), starts_with("S-"), `Pair Seen`)
+
+# Converting 'Rendering' and 'Visualization Seen' columns to factors
+df <- df %>%
+  mutate(`Rendering` = as.factor(`Rendering`),
+         `Visualization Seen` = as.factor(`Visualization Seen`))
+
+# Checking if the columns exist
+if (!("Rendering" %in% colnames(df))) {
+  stop("'Rendering' column not found in the dataframe")
+}
+if (!("Visualization Seen" %in% colnames(df))) {
+  stop("'Visualization Seen' column not found in the dataframe")
+}
+
+
+# Print the column names to verify
+print(colnames(survey_items_with_pair))
+
+# Checking for suitability of factor analysis
+# Kaiser-Meyer-Olkin (KMO) measure of sampling adequacy
+kmo_result <- KMO(cor(survey_items))
+print(kmo_result)
+
+# Bartlett's test of sphericity
+bartlett_result <- cortest.bartlett(cor(survey_items), n = nrow(survey_items))
+print(bartlett_result)
+
+# Conducting Factor Analysis
+# Decide on the number of factors using parallel analysis
+fa_parallel <- fa.parallel(survey_items, fm = "ml", fa = "fa")
+print(fa_parallel)
+
+# Conducting factor analysis with the suggested number of factors
+num_factors <- fa_parallel$nfact
+fa_result <- fa(survey_items, nfactors = num_factors, fm = "ml", rotate = "varimax")
+
+# Conditional factor score extraction
+if (num_factors >= 1) {
+  df$Factor1 <- fa_result$scores[, 1]
+}
+if (num_factors >= 2) {
+  df$Factor2 <- fa_result$scores[, 2]
+}
+
+# Check if Factor1 and Factor2 exist before running ANOVA
+if ("Factor1" %in% colnames(df)) {
+  # ANOVA for Factor 1
+  anova_factor1 <- aov(Factor1 ~ `Rendering` * `Visualization Seen`, data = df)
+  summary(anova_factor1)
+
+  # Check for interaction effects for Factor 1
+  interaction.plot(df$`Rendering`, df$`Visualization Seen`, df$Factor1)
+}
+
+if ("Factor2" %in% colnames(df)) {
+  # ANOVA for Factor 2
+  anova_factor2 <- aov(Factor2 ~ `Rendering` * `Visualization Seen`, data = df)
+  summary(anova_factor2)
+
+  # Check for interaction effects for Factor 2
+  interaction.plot(df$`Rendering`, df$`Visualization Seen`, df$Factor2)
+}
+```
+```{r}
+# Extract factor scores
+if (num_factors >= 1) {
+  df$Factor1 <- fa_result$scores[, 1]
+}
+if (num_factors >= 2) {
+  df$Factor2 <- fa_result$scores[, 2]
+}
+
+# Perform ANOVA for Factor 1
+if ("Factor1" %in% colnames(df)) {
+  anova_factor1 <- aov(Factor1 ~ `Rendering` * `Visualization Seen`, data = df)
+  print(summary(anova_factor1))  # Print the ANOVA table for Factor 1
+  interaction.plot(df$`Rendering`, df$`Visualization Seen`, df$Factor1, 
+                   xlab = "Rendering", ylab = "Factor 1", 
+                   trace.label = "Visualization Seen")
+}
+
+# Perform ANOVA for Factor 2
+if ("Factor2" %in% colnames(df)) {
+  anova_factor2 <- aov(Factor2 ~ `Rendering` * `Visualization Seen`, data = df)
+  print(summary(anova_factor2))  # Print the ANOVA table for Factor 2
+  interaction.plot(df$`Rendering`, df$`Visualization Seen`, df$Factor2, 
+                   xlab = "Rendering", ylab = "Factor 2", 
+                   trace.label = "Visualization Seen")
+}
+
+
+```
+
